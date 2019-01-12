@@ -24,7 +24,17 @@ var server = http.createServer(function (request, response) {
   console.log('含查询字符串的路径\n' + pathWithQuery);
 
   if (path === '/') {
-    let string = fs.readFileSync('./ajax/index3.html', 'utf-8');
+    let string = fs.readFileSync('./index.html', 'utf-8');
+    let cookies = request.headers.cookie.split('; ');
+    let hash = {}
+    cookies.forEach((item) =>{
+      let parts = item.split('=');
+      let key = parts[0];
+      let value = parts[1];
+      hash[key] = value
+    })
+    let email = hash[sign_in_email]
+
     response.statusCode = 200;
     response.setHeader('Content-Type', 'text/html;charset=utf-8');
     response.write(string);
@@ -43,42 +53,76 @@ var server = http.createServer(function (request, response) {
         let parts = string.split('=')
         let key = parts[0];
         let value = parts[1];
-        hash[key] = value;
+        hash[key] = decodeURIComponent(value);
       });
-      console.log(hash)
       let { email, password, password_confirm } = hash;
       if (email.indexOf('@') === -1) {
         response.statusCode = 400
-        response.write('email is bad')
+        response.setHeader('Content-Type', 'application/json;charset=utf-8');
+        response.write(`{
+          "errors": {
+            "email": "invalid"
+          }
+        }`)
       } else if (password != password_confirm) {
         response.statusCode = 400
         response.write('password is not same')
       } else {
-        response.statusCode = 200;
+        var users = fs.readFileSync('./db/users', 'utf-8')
+        try {
+          users = JSON.parse(users)
+        } catch (error) {
+          users = [];
+        }
+        let flag = users.findIndex((item) => { return item.email === email })
+        if (flag != -1) {
+          response.statusCode = 400
+          response.write('email is inuse')
+        } else {
+          users.push({ email: email, password: password })
+          var userString = JSON.stringify(users);
+          fs.writeFileSync('./db/users', userString)
+          response.statusCode = 200;
+        }
       }
       response.end()
     })
 
-  } else if (path === '/main3.js') {
-    let string = fs.readFileSync('./ajax/main3.js', 'utf-8');
+  } else if (path === '/signin' && method === 'GET') {
+    let string = fs.readFileSync('./signin.html', 'utf-8');
     response.statusCode = 200;
-    response.setHeader('Content-Type', 'text/javascript;charset=utf-8');
+    response.setHeader('Content-Type', 'text/html;charset=utf-8');
     response.write(string);
     response.end()
-  } else if (path === '/xxx') {
-    response.statusCode = 200;
-    response.setHeader('Content-Type', 'text/json;charset=utf-8');
-    response.write(`
-      {
-        "note":{
-          "to": "小谷",
-          "from": "方方",
-          "heading": "打招呼",
-          "content": "hi"
-        }
+  } else if (path === '/signin' && method === 'POST') {
+    let hash = {};
+    readBody(request).then((body) => {
+      let strings = body.split('&')
+      strings.forEach((string) => {
+        let parts = string.split('=')
+        let key = parts[0];
+        let value = parts[1];
+        hash[key] = decodeURIComponent(value);
+      });
+      let { email, password } = hash;
+      var users = fs.readFileSync('./db/users', 'utf-8')
+      try {
+        users = JSON.parse(users)
+      } catch (error) {
+        users = []
       }
-    `);
-    response.end()
+      let flag = users.findIndex((item) => {
+        return item.email === email && item.password === password
+      })
+      if (flag != -1) {
+        response.setHeader('Set-Cookie',`sign_in_email=${email}`)
+        response.statusCode = 200
+        response.write('got it')
+      } else {
+        response.statusCode = 401
+      }
+      response.end()
+    })
   } else {
     response.statusCode = 404;
     response.setHeader('Content-Type', 'text/html;charset=utf-8');
